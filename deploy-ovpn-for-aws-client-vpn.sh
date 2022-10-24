@@ -25,6 +25,9 @@
 # TODO(enpipi) : Checking the behavior when using Active Directory authentication. (enhancement #1)
 VERSION='0.2.0'
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+awsvpnURL="https://d20adtppz83p9s.cloudfront.net/OSX/latest/AWS_VPN_Client.pkg"
+dmgfile="AWS_VPN_Client.pkg"
+logfile="./Logs/AWSVPNInstallScript.log"
 
 # Output info log with timestamp
 print_info_log(){
@@ -42,13 +45,31 @@ print_error_log(){
   echo "$timestamp [ERROR] $1"
 }
 
+# Find the loggedInUser
+LOGGED_IN_USER=$(stat -f %Su /dev/console)
+
+VPN_APP_PATH="/Applications/AWS VPN Client/AWS VPN Client.app"
+USER_VPN_APP_PATH="/Users/$LOGGED_IN_USER/Applications/AWS VPN Client/AWS VPN Client.app"
 
 # Check for the existence of aws client vpn
-if [[ ! -e "/Applications/AWS VPN Client/AWS VPN Client.app" ]];then
-  print_error_log "It seems that the AWS VPN Clinet is not installed. Please install it and try again."
-  exit 1
+if [[ ! -e ${VPN_APP_PATH} ]];then
+  /usr/bin/curl -D- -o /dev/null -s https://d20adtppz83p9s.cloudfront.net/OSX/latest
+  if [[ $? != 0 ]]; then
+    echo "AWS not Reachable, Check Internet Connection"
+    exit $?
+  else
+    echo "Force Updating AWS VPN"
+    /bin/echo "--" >> ${logfile}
+    /bin/echo "`date`: Downloading latest version." >> ${logfile}
+    /usr/bin/curl -L -o /tmp/${dmgfile} ${awsvpnURL}
+    /bin/echo "`date`: Installing..." >> ${logfile}
+    /bin/sleep 10
+    installer -verbose -pkg /tmp/${dmgfile} -target /Applications >> ${logfile}
+    /bin/echo "`date`: Deleting installer." >> ${logfile}
+    /bin/rm /tmp/"${dmgfile}"
+    /bin/echo "`date`: AWS VPN installed successfully" >> ${logfile}
+  fi
 fi
-
 
 if [[ "${1}" = "/" ]];then
 	# Jamf uses sends '/' as the first argument
@@ -61,79 +82,53 @@ if [[ "${1:l}" = "version" ]];then
   exit 0
 fi
 
-if [[ ! "${1}" ]];then
-  print_error_log "You need to set ovpn file location."
-  exit 1
-fi
-OVPN_FILE_PATH="${1}"
-
-
-# TODO(enpipi): Check .ovpn file
-# print_error_log "File format is not ovpn. You need to set .ovpn file."
-
-
-if [[ ! "${2}" ]];then
-  print_error_log "You need to set aws vpn client profile name."
-  exit 1
-fi
-PRFILE_NAME="${2}"
-
-# TODO(enpipi): Only alphanumeric characters and "　,　-, _, (,)" can be used for display name.
-# print_error_log "Only alphanumeric characters and "　,　-, _, (,)" can be used for display name."
-
-
-if [[ ! "${3}" ]];then
-  print_error_log "You need to set CvpnEndpointId."
-  exit 1
-fi
-C_VPN_ENDPOINT_ID="${3}"
-
-
-if [[ ! "${4}" ]];then
-  print_error_log "You need to set CvpnEndpointRegion."
-  exit 1
-fi
-C_VPN_ENDPOINT_REGION="${4}"
-
-if [[ ! "${5}" ]];then
-  print_error_log "You need to set CompatibilityVersion."
-  exit 1
-fi
-COMATIBILITY_VERSION="${5}"
-
-if [[ ! "${6}" ]];then
-  print_error_log "You need to set FederatedAuthType."
-  exit 1
-fi
-FEDERATED_AUTH_TYPE="${6}"
-
-
 print_info_log "Start aws vpn client profile deplyment..."
+
 
 # Launch and exit the application to generate the initial config file.
 # If you don't do this, the application won't launch properly even if you place the ovpn file in the config.
 # TODO: Find a way to get the difference when adding and not launch the application.
-open -j -a "/Applications/AWS VPN Client/AWS VPN Client.app"
+print_info_log "Opening VPN Client at $VPN_APP_PATH"
+open -a "${VPN_APP_PATH}"
 osascript -e 'quit app "AWS VPN Client.app"'
-
-
-
-# Find the loggedInUser
-LOGGED_IN_USER=$(stat -f %Su /dev/console)
 
 # Set the file path to the ConnectionProfiles file with the loggedIn user
 CONNECTION_PROFILES="/Users/$LOGGED_IN_USER/.config/AWSVPNClient/ConnectionProfiles"
 OPEN_VPN_CONFIGS_DIRECTORY="/Users/$LOGGED_IN_USER/.config/AWSVPNClient/OpenVpnConfigs"
 
-# Delete auth-federate in OVPN_FILE_PATH
-print_info_log "delete auth-federate in ${OVPN_FILE_PATH}"
-sed -i -e '/auth-federate/d' "${OVPN_FILE_PATH}"
+i=0
+str=""
+FILES="./profiles/*"
+for f in $FILES 
+do
+    cvpn=$(grep -o -e 'cvpn-endpoint-\w*' $f)
+    fname=$(basename $f)
+    profile=${fname%.*}
+    echo "$cvpn : $fname"
+    # Delete auth-federate in OVPN_FILE_PATH
+    print_info_log "delete auth-federate in ${f}"
+    fed=$(sed -i '' '/auth-federate/d' "${f}")
 
-# Copy and rename ovpn file
-print_info_log "copy and rename ovpn file from ${OVPN_FILE_PATH} to ${OPEN_VPN_CONFIGS_DIRECTORY}/${PRFILE_NAME}"
-cp "${OVPN_FILE_PATH}" "${OPEN_VPN_CONFIGS_DIRECTORY}/${PRFILE_NAME}"
+    #Copy and rename ovpn file
+    print_info_log "copy and rename ovpn file from ${f} to ${OPEN_VPN_CONFIGS_DIRECTORY}/${profile}"
+    cp "${f}" "${OPEN_VPN_CONFIGS_DIRECTORY}/${profile}"
 
-# Get backup of ConnectionProfiles
+    if [ $i -gt 0 ]
+    then
+      str="${str},"
+    fi
+    let "i+=1"
+    str="${str}{ 
+      \"ProfileName\":\"${profile}\", 
+      \"OvpnConfigFilePath\":\"/Users/$LOGGED_IN_USER/.config/AWSVPNClient/OpenVpnConfigs/${profile}\", 
+      \"CvpnEndpointId\":\"$cvpn\", 
+      \"CvpnEndpointRegion\":\"us-east-1\", 
+      \"CompatibilityVersion\":\"2\", 
+      \"FederatedAuthType\":1 
+    }"
+done
+
+    # Get backup of ConnectionProfiles
 print_info_log "Get backup of ${CONNECTION_PROFILES}"
 CONNECTION_PROFILES_BACKUP="/Users/$LOGGED_IN_USER/.config/AWSVPNClient/_ConnectionProfiles"
 cp "$CONNECTION_PROFILES" "$CONNECTION_PROFILES_BACKUP"
@@ -144,18 +139,11 @@ cp "$CONNECTION_PROFILES" "$CONNECTION_PROFILES_BACKUP"
 # We need to realize this TODO with awk and sed.
 # This is because we have to assume that the terminal does not have JQ installed on it.
 cat <<EOF > "$CONNECTION_PROFILES"
-{
-  "Version":"1",
-  "LastSelectedProfileIndex":0,
-  "ConnectionProfiles":[
-    {
-      "ProfileName":"${PRFILE_NAME}",
-      "OvpnConfigFilePath":"/Users/$LOGGED_IN_USER/.config/AWSVPNClient/OpenVpnConfigs/${PRFILE_NAME}",
-      "CvpnEndpointId":"${C_VPN_ENDPOINT_ID}",
-      "CvpnEndpointRegion":"${C_VPN_ENDPOINT_REGION}",
-      "CompatibilityVersion":"${COMATIBILITY_VERSION}",
-      "FederatedAuthType":${FEDERATED_AUTH_TYPE}
-    }
+  {
+    "Version":"1",
+    "LastSelectedProfileIndex":0,
+    "ConnectionProfiles":[
+    ${str}
   ]
 }
 EOF
