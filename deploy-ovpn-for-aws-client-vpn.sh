@@ -25,9 +25,12 @@
 # TODO(enpipi) : Checking the behavior when using Active Directory authentication. (enhancement #1)
 VERSION='0.2.0'
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+ovpnProfileURL="https://s3.amazonaws.com/cdn.knowthycustomer.com/VPN_Profiles"
 awsvpnURL="https://d20adtppz83p9s.cloudfront.net/OSX/latest/AWS_VPN_Client.pkg"
+declare -a profiles=("development.ovpn" "infra-01.ovpn") 
+
 dmgfile="AWS_VPN_Client.pkg"
-logfile="./Logs/AWSVPNInstallScript.log"
+logfile="./tmp/AWSVPNInstallScript.log"
 
 # Output info log with timestamp
 print_info_log(){
@@ -91,14 +94,20 @@ print_info_log "Start aws vpn client profile deplyment..."
 print_info_log "Opening VPN Client at $VPN_APP_PATH"
 open -a "${VPN_APP_PATH}"
 osascript -e 'quit app "AWS VPN Client.app"'
-
+sleep 5
 # Set the file path to the ConnectionProfiles file with the loggedIn user
 CONNECTION_PROFILES="/Users/$LOGGED_IN_USER/.config/AWSVPNClient/ConnectionProfiles"
 OPEN_VPN_CONFIGS_DIRECTORY="/Users/$LOGGED_IN_USER/.config/AWSVPNClient/OpenVpnConfigs"
+print_info_log "Obtaining VPN Profiles"
 
+for val in ${profiles[@]}
+do
+  profile_url="$ovpnProfileURL/$val"
+  /usr/bin/curl -o /tmp/${val} ${profile_url}
+done
 i=0
 str=""
-FILES="./profiles/*"
+FILES="/tmp/*.ovpn"
 for f in $FILES 
 do
     cvpn=$(grep -o -e 'cvpn-endpoint-\w*' $f)
@@ -147,7 +156,10 @@ cat <<EOF > "$CONNECTION_PROFILES"
   ]
 }
 EOF
-
+for val in ${profiles[@]}
+do
+  /bin/rm /tmp/"${val}"
+done
 print_info_log "End aws vpn client profile deplyment..."
 
 
