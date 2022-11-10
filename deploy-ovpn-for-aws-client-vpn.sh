@@ -27,10 +27,10 @@ VERSION='0.2.0'
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 ovpnProfileURL="https://s3.amazonaws.com/cdn.knowthycustomer.com/VPN_Profiles"
 awsvpnURL="https://d20adtppz83p9s.cloudfront.net/OSX/latest/AWS_VPN_Client.pkg"
-declare -a profiles=("development.ovpn" "infra-01.ovpn") 
+declare -a profiles=("development.ovpn" "LTV-Internal.ovpn") 
 
 dmgfile="AWS_VPN_Client.pkg"
-logfile="./tmp/AWSVPNInstallScript.log"
+logfile="./Logs/AWSVPNInstallScript.log"
 
 # Output info log with timestamp
 print_info_log(){
