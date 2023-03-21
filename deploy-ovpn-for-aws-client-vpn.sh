@@ -27,7 +27,7 @@ VERSION='0.2.0'
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 ovpnProfileURL="https://s3.amazonaws.com/cdn.knowthycustomer.com/VPN_Profiles"
 awsvpnURL="https://d20adtppz83p9s.cloudfront.net/OSX/latest/AWS_VPN_Client.pkg"
-declare -a profiles=("development.ovpn" "LTV-Gateway.ovpn") 
+declare -a profiles=("production.ovpn") 
 
 dmgfile="AWS_VPN_Client.pkg"
 logfile="./Logs/AWSVPNInstallScript.log"
